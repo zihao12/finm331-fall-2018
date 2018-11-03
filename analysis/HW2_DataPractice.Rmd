@@ -1,0 +1,262 @@
+---
+title: "hw2"
+author: "Zihao_Wang"
+date: "11/3/2018"
+output: html_document
+---
+```{r}
+rm(list=ls())
+set.seed(12345)
+options(warn = -1)
+knitr::opts_knit$set(root.dir = '~/Desktop/finm331-fall-2018/analysis/')
+library(ggplot2)
+```
+
+# 1
+```{r}
+track = read.table("../data/hw2/p1.txt")
+colnames(track) = c("Country","100m","200m","400m","800m","1500m","3000m","Marathon")
+#track$Country = as.factor(track$Country)
+X = track[,colnames(track) != "Country"]
+X = as.matrix(X)
+n = nrow(X)
+p = ncol(X)
+
+## sample means
+### of course the sample means for "Country" variable 
+Xbar = (t(replicate(n,1)) %*% X)/n
+
+## sample covariance and correlation matrix
+S = (t(X) %*% (diag(replicate(n,1)) - matrix(replicate(n*n,1), nrow = n)/n)  %*% X)/(n-1)
+
+D = diag(1/sqrt(diag(S)))
+R =  D %*% S %*% D
+
+## correlation matrix of the log of data
+X_log = log(X)
+S_log = (t(X_log) %*% (diag(replicate(n,1)) - matrix(replicate(n*n,1), nrow = n)/n)  %*% X_log)/(n-1)
+D_log = diag(1/sqrt(diag(S_log)))
+R_log = D_log %*% S_log %*% D_log
+
+format(Xbar,digits = 2)
+format(S,digits = 2)
+format(R,digits = 2)
+format(R_log,digits = 2)
+```
+
+## Comment
+It is surprising that the correlation matrix of the log data is almost the same as that of the original data.
+
+# 4 (Sample PCA)
+## (a)
+```{r}
+eigdec = eigen(R)
+print(paste0("sum of eigenvalues: ", sum(eigdec$values), " while the number of feature p: ",p))
+```
+### Comment
+The sum of eigenvalues of sample correlation matrix is the same as the $p$, the number of features.
+
+## (b)
+
+### 1
+```{r}
+## standardize X (call it Z)
+Z = (X - t(replicate(n,as.numeric(Xbar)))) %*% D
+## svd
+svd_Z = svd(Z)
+pc1 = svd_Z$v[,1]
+q1 = eigdec$vectors[,1]
+print("ratio of pc1 from svd to pc1 from evd is: ")
+pc1/q1
+```
+
+### 2
+Use the formula $\lambda_k = \frac{1}{n-1} \sigma_k^2$, we know the proportion is $\frac{\lambda_k}{\lambda_1+...+\lambda_p} = \frac{\sigma_k^2}{\sigma_1^2+...+\sigma_p^2}$. So the ratio explained by the first two pcs is:
+```{r}
+sum(svd_Z$d[1:2]^2)/sum(svd_Z$d^2)
+```
+
+## (c)
+
+### 1
+```{r}
+Score = svd_Z$u[,1:2]
+Score = as.data.frame(Score)
+Score = cbind(as.factor(track$Country),Score)
+names(Score) <- c("Country","PC1","PC2")
+ggplot(Score, aes(x=PC1, y = PC2, label = Country))+
+  geom_point(color = "blue")+
+  geom_text()
+```
+
+### 2
+```{r}
+Score = Score[order(Score$PC1),]
+print("top 6 in PC1: ")
+head(Score$Country,6)
+
+print("last 3 in PC1: ")
+tail(Score$Country,3)
+```
+
+
+#### Comment:
+The list is similar to the rank of the number of medals won in the Olympic Games. "Athletic Excellence" is a very subjective definition. If I define it in terms of the number of top prizes won by a country, then it reflects "Athletic Excellence".
+
+# 5 (Scaling effect in sample PCA)
+```{r}
+#rm(list = ls())
+air = read.table("../data/hw2/p5.txt")
+colnames(air) = c("Wind", "Radiation", "CO", "NO", "NO2", "O3", "HC")
+
+n = nrow(air)
+p = ncol(air)
+```
+
+## (a)
+```{r}
+X = as.matrix(air)
+Xbar = as.numeric((t(replicate(n,1)) %*% X) / n)
+Xc = X - t(replicate(n,Xbar))
+
+## PCA on sample covariance matrix
+svd_Xc = svd(Xc)
+
+## Scree plot (well, not quite the same)
+idx = 1:7
+scree1 = sapply(idx, function(i) sum(svd_Xc$d[1:i]))/sum(svd_Xc$d)
+plot(idx,scree1)
+
+```
+
+```{r}
+## standardize data
+S = (t(X) %*% (diag(replicate(n,1)) - matrix(replicate(n*n,1), nrow = n)/n)  %*% X)/(n-1)
+D = diag(1/sqrt(diag(S)))
+Z = Xc %*% D
+
+## PCA on sample covariance matrix
+svd_Z = svd(Z)
+
+## Scree plot (well, not quite the same)
+idx = 1:7
+scree2 = sapply(idx, function(i) sum(svd_Z$d[1:i]))/sum(svd_Z$d)
+plot(idx,scree2)
+
+```
+### Comment:
+* In the case of covariance matrix, we need 4 PCs to account for 90% of the variance; \
+
+* In the case of correlation matrix, we need 6 PCs to account for 90% of the variance
+
+## (b)
+```{r}
+plot(svd_Xc$d/sum(svd_Xc$d), ylab = "variance explained", xlab = "PC", main = "Sample Covariance ")
+plot(svd_Z$d/sum(svd_Z$d), ylab = "variance explained", xlab = "PC", main = "Sample Correlation ")
+
+```
+## (c)
+Comment: Without scaling, the variance can be explained by a smaller number of PCs, as opposed to the scaled data.
+
+
+# 6
+```{r}
+#rm(list = ls())
+data <- read.csv("../data/hw2/p6-data.txt", sep = ",", row.names = 1,header = TRUE)
+```
+
+## (a) standardizing
+```{r}
+std_data <- function(X){
+  n = nrow(X)
+  p = ncol(X)
+  Xbar = as.numeric((t(replicate(n,1)) %*% X) / n)
+  Xc = X - t(replicate(n,Xbar))
+  S = (t(X) %*% (diag(replicate(n,1)) - matrix(replicate(n*n,1), nrow = n)/n)  %*% X)/(n-1)
+  D = diag(1/sqrt(diag(S)))
+  Z = Xc %*% D 
+  return(Z)
+}
+
+A = as.matrix(data)
+Ahat = std_data(A)
+```
+
+## (b) SVD + PCA scatter plot
+```{r}
+svd_Ahat = svd(Ahat)
+Score = svd_Ahat$u %*% diag(svd_Ahat$d)
+Score = as.data.frame(Score[,1:2])
+Score = cbind(as.factor(rownames(data)),Score)
+names(Score) <- c("Country_Region","PC1","PC2")
+
+p1 = ggplot(Score, aes(x=PC1, y = PC2, label = Country_Region))+
+  geom_point(color = "blue")+
+  geom_text()
+p1
+
+```
+### Comment:
+There is a common linear relation between PC1 and PC2 for most of the countries, except the two outliers : Hong Kong and Singapore
+
+## (c) SVD + variable PCA scatter plot
+```{r}
+Score_var = svd_Ahat$v %*% diag(svd_Ahat$d)
+Score_var = as.data.frame(Score_var[,1:2])
+Score_var = cbind(as.factor(colnames(data)),Score_var)
+names(Score_var) <- c("feature","vPC1","vPC2")
+
+p2 = ggplot(Score_var, aes(x=vPC1, y = vPC2, label = feature))+
+  geom_point(color = "purple")+
+  geom_text()
+p2
+
+```
+
+## (d) Biplot
+```{r}
+p1 = ggplot(Score, aes(x=PC1, y = PC2, label = Country_Region))+
+  geom_point(color = "black")+
+  geom_text(color = "blue")
+
+p2 = p1 +
+  geom_point(data = Score_var, aes(x=vPC1,y = vPC2, label = feature), color = "red")+
+  geom_text(data = Score_var, aes(x=vPC1,y = vPC2, label = feature), color = "green")
+
+p2
+
+```
+
+### Comment:
+From the biplot, we can see that HK and Singapore are outliers because of the two features, the 
+"Population.sq.km" and "Population.1000HectarAgri".
+
+## (e) Outlier removed, redo (a), (b)
+```{r}
+A_rm = A[! rownames(A) %in% c("Hong Kong","Singapore"),]
+Ahat = std_data(A_rm)
+
+svd_Ahat = svd(Ahat)
+Score = svd_Ahat$u %*% diag(svd_Ahat$d)
+Score = as.data.frame(Score[,1:2])
+Score = cbind(as.factor(rownames(A_rm)),Score)
+names(Score) <- c("Country_Region","PC1","PC2")
+
+p1 = ggplot(Score, aes(x=PC1, y = PC2, label = Country_Region))+
+  geom_point(color = "blue")+
+  geom_text()
+p1
+
+```
+### Comment:
+Belgium and netherlands are the two European countries closest to Japan.
+
+  
+
+
+
+
+
+
+
+
